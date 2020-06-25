@@ -1,4 +1,4 @@
-# 193 Smart Phone Charger
+# #193 Smart Phone Charger
 Android and Arduino Code for the Smart Phone Charger (user-selected limits on (dis-)charging)
 
 Keeping your phone connected to your charger for long periods (during the day at work or overnight) will cause battery stress and shorten its life. This device will allow you set predetermined limits on when to stop charging and when to start again (percentage of battery power).
@@ -11,10 +11,10 @@ The code is split into two parts:
 
 Each code app is placed into underlying folders here with their own README file which describes the current state of play.
 
-The schematic of the hardware (controlled by the Arduino Pro Mini \[think: Arduino UNO without the USB bit] , but that could really be any microprocessor) is in a separate folder along with the EasyEDA PCB design files.
+The schematic of the hardware (controlled by the Arduino Pro Mini \[think: small Arduino UNO without the USB bit] , but that could really be any microprocessor) is in a separate folder along with the EasyEDA PCB design files.
 
 This is a work in progress. The protoype is complete and can be seen working in this YouTube video:  
-https://youtu.be/fvb3i4yV20s 
+https://youtu.be/fvb3i4yV20s  
 I shall be concentrating in getting the phone app completed (done-done) and the Arduino code completed too (done-done). See the video on what I am talking about when I say "done-done".
 
 ### Parts List
