@@ -55,6 +55,7 @@ bool prevStateDisconnected = true;
 // Are we charging to the MAX ppint or discharging to MIN level?
 // Note this depends on whehter the output is HIGH or LOW in Setup()
 bool chargingUp = true;
+int batLevel = 0;
 
 // Rolling average for current consumption (due to phone jitter)
 uint16_t mA_Average[20] = { 0 };
@@ -81,6 +82,7 @@ bool extractHeartBeatFromBTdata(int startIdx, int endIdx);
 int extractDataFromBTdata(int startIdx, int endIdx);
 void printRawData();
 void pluggedInStatus();
+void displayBatteryPercent();
 
 // SSD1306 OLED
 void displayHeartBeat();
@@ -89,6 +91,9 @@ void displayChargeStatus(bool charging = true);
 // INA219 Current Monitor
 void INA219_setup();
 int getMilliAmps();
+
+// DEBUG flag controls whether we send Serial.print statements
+// #define DEBUGMSG 1
 
 // -----------------------------------------------------------------------------------
 // SET UP   SET UP   SET UP   SET UP   SET UP   SET UP   SET UP   SET UP   SET UP
@@ -125,7 +130,9 @@ void setup() {
 	// SSD1306 initialize with the I2C addr 0x3C (for the 128x32)
 	if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
 	{
+#ifdef DEBUGMSG
 		Serial.println(F("SSD1306 allocation failed"));
+#endif
 		for (;;)
 			; // Don't proceed, loop forever
 	}
@@ -133,30 +140,33 @@ void setup() {
 	// Clear the buffer.
 	display.clearDisplay();
 	display.display();
+	display.cp437(true);         // Use full 256 char 'Code Page 437' font
 
+#ifdef DEBUGMSG
 	display.setTextSize(1);      // Normal 1:1 pixel scale
 	display.setTextColor(SSD1306_WHITE); // Draw white text
 	display.setCursor(0, 0);     // x,y Start at top-left corner
-	display.cp437(true);         // Use full 256 char 'Code Page 437' font
 
 	// Not all the characters will fit on the display. This is normal.
 	// Library will draw what it can and the rest will be clipped.
+
 	for (int16_t i = 0; i < 256; i++)
 	{
 		if (i == '\n') display.write(' ');
 		else
-			display.write(i);
+		display.write(i);
 	}
 
 	display.display();
+#endif
+
+	displayNotConnected();
 	delay(2000);
 
-	// Clear the buffer.
-	display.clearDisplay();
-	display.display();
-
 	// Setup done
+#ifdef DEBUGMSG
 	Serial.println(F("Set up complete"));
+#endif
 }
 
 // Main process to inspect the BT data from phone
@@ -181,7 +191,9 @@ void processBTdata()
 		// Is this the heartbeat?
 		if (extractHeartBeatFromBTdata(8, 16))
 		{
+#ifdef DEBUGMSG
 			Serial.println(F("Heartbeat received."));
+#endif
 			pluggedInStatus();
 
 			// SSD1306 show the heart symbol
@@ -196,28 +208,36 @@ void processBTdata()
 			 * so we can track what is going on whilst developing
 			 * this program!
 			 */
-			int batLevel = extractDataFromBTdata(8, 10);
+			batLevel = extractDataFromBTdata(8, 10);
+#ifdef DEBUGMSG
 			Serial.print(F("Battery Level:"));
 			Serial.print(batLevel);
+#endif
 			displayBTbuffer();
 
 			printDateTimeStamp(buffer);
 
 			int maxCharge = extractDataFromBTdata(11, 13);
+#ifdef DEBUGMSG
 			Serial.print(F("Max Charge Level:"));
 			Serial.print(maxCharge);
+#endif
 			displayBTbuffer();
 
 			printDateTimeStamp(buffer);
 
 			int minCharge = extractDataFromBTdata(14, 16);
+#ifdef DEBUGMSG
 			Serial.print(F("Min charge Level:"));
 			Serial.print(minCharge);
+#endif
 			displayBTbuffer();
 
 			printDateTimeStamp(buffer);
 
+#ifdef DEBUGMSG
 			Serial.print(F("Phone plugged in:"));
+
 			if (isPluggedIn)
 			{
 				Serial.println(F("Yes"));
@@ -225,6 +245,7 @@ void processBTdata()
 			{
 				Serial.println(F("No"));
 			}
+#endif
 
 			// If the battery is now >= max wanted, switch off
 			if (batLevel >= maxCharge && chargingUp)
@@ -242,16 +263,7 @@ void processBTdata()
 			}
 
 			printDateTimeStamp(buffer);
-			if (chargingUp)
-			{
-				Serial.println(F("Charging."));
-				printDateTimeStamp(buffer);
-				displayChargeStatus(true);
-			} else
-			{
-				Serial.println(F("Charging paused."));
-				displayChargeStatus(false);
-			}
+			displayBatteryPercent();
 
 			// Is phone plugged in when it should be?
 			pluggedInStatus();
@@ -261,20 +273,22 @@ void processBTdata()
 		}
 	} else
 	{
+#ifdef DEBUGMSG
 		Serial.print(F("Only received "));
 		Serial.print(byteCount);
 		Serial.println(F(" characters - ignored."));
+#endif
 	}
 
 	// Discard partial data in serial buffer
 	while (BTserial.available())
 	{
 		BTserial.read();
+#ifdef DEBUGMSG
 		Serial.println(F("Discarded a serial character."));
+#endif
 	}
-	// clear BT buffer
-	// memset(buffer, 0, sizeof buffer);
-	// buffer[19] = '\0';
+
 }
 
 // -----------------------------------------------------------------------------------
@@ -330,20 +344,35 @@ void loop() {
 			processBTdata();
 		} else
 		{
-			// We ARE connected but no BT data at this time.
+			// We ARE connected but no BT data to process at this time.
 
 			// Update charge current on screen
-			if (chargingUp)
+			//if (chargingUp)
+			//{
+			displayHeartBeat();
+
+			// Toggle between charge current and battery level
+			static int displayCharge = 0;
+
+			if (++displayCharge > 10)
 			{
-				displayHeartBeat();
-				displayChargeStatus(true);
+				displayCharge = 0;
+				displayBatteryPercent();
 			}
+			else
+			{
+				displayCharge++;
+				displayChargeStatus(chargingUp);
+			}
+			//}
 
 			// Check last heartbeat
 			// See http://www.gammon.com.au/millis on why we do it this way
 			if (millis() - lastHeartBeat >= 300000UL)
 			{
+#ifdef DEBUGMSG
 				Serial.println(F("Connected, but no heartbeat for 5 minutes"));
+#endif
 				lastHeartBeat = millis();
 
 				// TODO Do something with the heartbeat LED here
@@ -355,19 +384,13 @@ void loop() {
 		// If we were previously connected but now are not
 		if (!prevStateDisconnected)
 		{
+#ifdef DEBUGMSG
 			Serial.println(F("NOT CONNECTED."));
+#endif
 			prevStateDisconnected = true;
 
 			// TODO Do something with the connected LED here
-			display.clearDisplay();
-			display.display();
-
-			display.setCursor(20, 1);   // x,y
-			display.print("NOT");
-			display.setCursor(1, 18);   // x,y
-			display.print("CONNECTED");
-
-			display.display();
+			displayNotConnected();
 		}
 	}
 
@@ -376,25 +399,28 @@ void loop() {
 }
 
 // Print the first 8 characters - always the timestamp
-void printDateTimeStamp(char buffer[15])
-		{
-
+void printDateTimeStamp(char buffer[15]) {
+	static char dummy __attribute__ ((used)) = buffer[1];
+#ifdef DEBUGMSG
 	for (auto cnt = 0; cnt < 8; cnt++)
 	{
 		Serial.print((char) buffer[cnt]);
 	}
 	Serial.print(" ");
+#endif
 }
 
 // Display the extracted 3-character value buffer
 void displayBTbuffer()
 {
+#ifdef DEBUGMSG
 	Serial.print(" (");
 	for (auto cnt = 0; cnt < 3; cnt++)
 	{
 		Serial.print(btValue[cnt]);
 	}
 	Serial.println(")");
+#endif
 }
 
 // Extract the data element to check for heartbeat string
@@ -446,12 +472,14 @@ int extractDataFromBTdata(int startIdx, int endIdx)
 // What's coming in the BT serial buffer?
 void printRawData()
 {
+#ifdef DEBUGMSG
 	Serial.print(F("Raw buffer: "));
 	for (auto cnt = 0; cnt < 18; cnt++)
 	{
 		Serial.print(buffer[cnt]);
 	}
 	Serial.println(" ");
+#endif
 }
 
 // Is phone connected to USB power source?
@@ -461,7 +489,9 @@ void pluggedInStatus()
 	if (!isPluggedIn && chargingUp)
 	{
 		printDateTimeStamp(buffer);
+#ifdef DEBUGMSG
 		Serial.println(F("Plug phone in to Charge."));
+#endif
 	}
 }
 
@@ -489,31 +519,6 @@ void displayHeartBeat()
 	display.setTextColor(SSD1306_WHITE);
 	display.setCursor(0, startPos);	// x,y Start at top-left corner
 	display.write(3);
-	display.display();
-}
-
-void displayChargeStatus(bool charging)
-		{
-	// clear area of screen
-	display.fillRect(10, 0, display.width() - 10, display.height(), SSD1306_BLACK);
-
-	// Write the message
-	display.setTextSize(2);
-	display.setTextColor(SSD1306_WHITE);
-	if (charging)
-	{
-		int chargemA = getMilliAmps();
-		display.setCursor(20, 1);   // x,y
-		display.print("CHARGE");
-		display.setCursor(20, 18);   // x,y
-		display.print(chargemA);
-		display.print(" mA");
-	} else
-	{
-		display.setCursor(20, 16);   // x,y
-		display.print("-PAUSED-");
-	}
-
 	display.display();
 }
 
@@ -549,21 +554,27 @@ void INA219_setup()
 	response = Wire.endTransmission();
 	if (response == 0)
 	{
+#ifdef DEBUGMSG
 		Serial.print(F("I2C device found at hexAddress 0x"));
 		if (hexAddress < 16)
-			Serial.print("0");
+		Serial.print("0");
 		Serial.println(hexAddress, HEX);
+#endif
 	}
 	else if (response == 4) // unknown error
 	{
+#ifdef DEBUGMSG
 		Serial.print(F("Unknown response at hexAddress 0x"));
 		if (hexAddress < 16)
-			Serial.print("0");
+		Serial.print("0");
 		Serial.println(hexAddress, HEX);
+#endif
 	}
 
 	// All done here
+#ifdef DEBUGMSG
 	Serial.println(F("INA219 Setup completed."));
+#endif
 }
 
 int getMilliAmps()
@@ -610,14 +621,17 @@ int getMilliAmps()
 	//Serial.println(current);
 
 	// if this is the FIRST charge pre-fill array to speed things up
-	if (current == 0) {
+	if (current == 0)
+	{
 		firstCharge = true;
 	}
 
 	if (firstCharge && current > 0)
 	{
+#ifdef DEBUGMSG
 		Serial.print(F("First charge after zero, filling array with "));
 		Serial.println(current);
+#endif
 		firstCharge = false;
 		for (uint8_t cnt = 0; cnt < (sizeof(mA_Average) / 2); cnt++)
 		{
@@ -638,4 +652,63 @@ int getMilliAmps()
 	}
 
 	return rollingAverage / numberOfAverages;
+}
+
+void displayBatteryPercent()
+{
+	// clear area of screen (leave heartbeat alone)
+	display.fillRect(10, 0, display.width() - 10, display.height(), SSD1306_BLACK);
+
+	// Write the message
+	display.setTextSize(2);
+	display.setTextColor(SSD1306_WHITE);
+	display.setCursor(32, 1);   // x,y
+	display.print("CHARGE");
+	display.setCursor(50, 18);   // x,y
+	display.print(batLevel);
+	display.print("%");
+	display.display();
+}
+
+void displayNotConnected() {
+	display.clearDisplay();
+	display.display();
+
+	display.setTextSize(2);
+	display.setTextColor(SSD1306_WHITE);
+	display.setCursor(50, 1);   // x,y
+	display.print("NOT");
+	display.setCursor(10, 18);   // x,y
+	display.print("CONNECTED");
+
+	display.display();
+}
+
+void displayChargeStatus(bool charging)
+		{
+	// clear area of screen (leave heartbeat alone)
+	display.fillRect(10, 0, display.width() - 10, display.height(), SSD1306_BLACK);
+
+	// Write the message
+	display.setTextSize(2);
+	display.setTextColor(SSD1306_WHITE);
+	if (charging)
+	{
+		int chargemA = getMilliAmps();
+		display.setCursor(32, 1);   // x,y
+		display.print("CHARGE");
+		display.setCursor(40, 18);   // x,y
+		display.print(chargemA);
+		display.print("mA");
+	} else
+	{
+		//display.setCursor(20, 16);   // x,y
+		display.setCursor(32, 1);   // x,y
+		display.print("PAUSED");
+		display.setCursor(50, 18);   // x,y
+		display.print(batLevel);
+		display.print("%");
+	}
+
+	display.display();
 }

@@ -30,7 +30,7 @@
 
 
 //add your function definitions for the project Arduino_Intelligent_Phone_Charger_HC06 here
-
+void displayNotConnected();
 
 
 
